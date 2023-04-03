@@ -1,0 +1,53 @@
+service: WeaveWebsocket
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+
+plugins:
+  - serverless-webpack
+  - serverless-webpack-prisma
+  - serverless-dotenv-plugin
+  - serverless-plugin-typescript
+  - serverless-prune-plugin
+package:
+  artifact: .build/serverless/WeaveWebsocket.zip
+  patterns:
+    - "!node_modules/.prisma/client/libquery_engine-*"
+    - "node_modules/.prisma/client/libquery_engine-rhel-*"
+    - "!node_modules/prisma/libquery_engine-*"
+    - "!node_modules/@prisma/engines/**"
+
+custom:
+  webpack:
+    webpackConfig: webpack.config.js
+    includeModules:
+      forceInclude:
+        - ws
+functions:
+  connect:
+    handler: src/functions/connect.connect
+    events:
+      - websocket:
+          route: $connect
+  disconnect:
+    handler: src/functions/disconnect.disconnect
+    events:
+      - websocket:
+          route: $disconnect
+  updateConnection:
+    handler: src/functions/default.handler
+    events:
+      - websocket:
+          route: $default
+  sendMessage:
+    handler: src/functions/sendMessage.handler
+    events:
+      - websocket:
+          route: message
+  sendAudio:
+    handler: src/functions/sendAudio.handler
+    events:
+      - websocket:
+          route: audio
