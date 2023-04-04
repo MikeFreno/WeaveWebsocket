@@ -12,7 +12,6 @@ type payloadType = {
 
 export async function handler(event: APIGatewayProxyEvent) {
   let payload: payloadType = JSON.parse(event.body);
-  console.log(payload);
   const senderID = payload.senderID;
   const channelID = payload.channelID;
 
@@ -33,28 +32,29 @@ export async function handler(event: APIGatewayProxyEvent) {
   const client = new AWS.ApiGatewayManagementApi({
     endpoint: `https://${event.requestContext.domainName}/${event.requestContext.stage}`,
   });
-  await Promise.all(
-    connections.map(async (connection) => {
-      try {
-        const output = {
-          ConnectionId: connection.connectionID,
-          Data: JSON.stringify(comment),
-        };
-        await client.postToConnection(output).promise();
-        return { statusCode: 200, body: "Audio sent." };
-      } catch (e) {
-        if (e.statusCode === 410) {
-          // If a connection is no longer available, delete it from the database.
-          await prisma.wSConnection.delete({
-            where: { connectionID: connection.connectionID },
-          });
-        } else {
-          console.error(
-            `Failed to send message to connection ${connection.connectionID}: ${e}`
-          );
-          throw e;
+  if (connections.length > 0) {
+    await Promise.all(
+      connections.map(async (connection) => {
+        try {
+          const output = {
+            ConnectionId: connection.connectionID,
+            Data: JSON.stringify(comment),
+          };
+          await client.postToConnection(output).promise();
+        } catch (e) {
+          if (e.statusCode === 410) {
+            // If a connection is no longer available, delete it from the database.
+            await prisma.wSConnection.delete({
+              where: { connectionID: connection.connectionID },
+            });
+          } else {
+            console.error(
+              `Failed to send message to connection ${connection.connectionID}: ${e}`
+            );
+            throw e;
+          }
         }
-      }
-    })
-  );
+      })
+    );
+  }
 }

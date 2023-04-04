@@ -7,13 +7,15 @@ const prisma = new PrismaClient();
 type payloadType = {
   senderID: string;
   channelID: number;
-  audio?: Uint8Array;
+  requestType: string;
+  data?: string | object;
+  targetConnectionID?: string;
 };
 
 export async function handler(event: APIGatewayProxyEvent) {
   let payload: payloadType = JSON.parse(event.body);
-  const audio = payload.audio;
   const senderConnection = event.requestContext.connectionId;
+  const requestType = payload.requestType;
 
   const sender_connection = await prisma.wSConnection.findFirst({
     where: {
@@ -31,43 +33,38 @@ export async function handler(event: APIGatewayProxyEvent) {
     endpoint: `https://${event.requestContext.domainName}/${event.requestContext.stage}`,
   });
 
-  await Promise.all(
-    connections.map(async (connection) => {
-      if (connection.connectionID !== senderConnection) {
-        try {
+  switch (requestType) {
+    case "peer":
+      // Broadcast the new peer's ID to all other clients
+      await Promise.all(
+        connections.map(async (connection) => {
+          const message = { type: "peer", id: connection.connectionID };
           const output = {
             ConnectionId: connection.connectionID,
-            Data: JSON.stringify({
-              audio: audio,
-              speaker: sender_connection.userId,
-            }),
+            Data: JSON.stringify(message),
           };
+
           await client.postToConnection(output).promise();
-          return { statusCode: 200, body: "Audio sent." };
-        } catch (e) {
-          if (e.statusCode === 410) {
-            // If a connection is no longer available, delete it from the database.
-            await prisma.wSConnection.delete({
-              where: { connectionID: connection.connectionID },
-            });
-          } else {
-            console.error(
-              `Failed to send audio to connection ${connection.connectionID}: ${e}`
-            );
-            throw e;
-          }
-        }
-      } else {
-        return {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Methods": "*",
-            "Access-Control-Allow-Origin": "*",
-          },
-          statusCode: 200,
-          body: "Audio sent.",
+        })
+      );
+      break;
+    case "signal":
+      // Forward the signal to the target client
+      const targetSocket = payload.targetConnectionID;
+      if (targetSocket) {
+        const message = {
+          type: "signal",
+          from: senderConnection,
+          signal: payload.data,
         };
+        const output = {
+          ConnectionId: targetSocket,
+          Data: JSON.stringify(message),
+        };
+        await client.postToConnection(output).promise();
       }
-    })
-  );
+      break;
+    default:
+      console.error("Unknown message type:", payload.requestType);
+  }
 }
