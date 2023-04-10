@@ -7,15 +7,18 @@ const prisma = new PrismaClient();
 type payloadType = {
   senderID: string;
   channelID: number;
-  requestType: string;
+  type: string;
   data?: string | object;
   targetConnectionID?: string;
+  candidate?: any;
+  offer?: any;
+  answer?: any;
 };
 
 export async function handler(event: APIGatewayProxyEvent) {
   let payload: payloadType = JSON.parse(event.body);
   const senderConnection = event.requestContext.connectionId;
-  const requestType = payload.requestType;
+  const requestType = payload.type;
 
   const sender_connection = await prisma.wSConnection.findFirst({
     where: {
@@ -30,41 +33,87 @@ export async function handler(event: APIGatewayProxyEvent) {
     },
   });
   const client = new AWS.ApiGatewayManagementApi({
-    endpoint: `https://${event.requestContext.domainName}/${event.requestContext.stage}`,
+    apiVersion: "2018-11-29",
+    endpoint: "jzph5ltl27.execute-api.us-east-1.amazonaws.com/dev",
   });
 
   switch (requestType) {
-    case "peer":
+    case "ice-candidate":
       // Broadcast the new peer's ID to all other clients
-      await Promise.all(
-        connections.map(async (connection) => {
-          const message = { type: "peer", id: connection.connectionID };
-          const output = {
-            ConnectionId: connection.connectionID,
-            Data: JSON.stringify(message),
-          };
-
-          await client.postToConnection(output).promise();
-        })
-      );
-      break;
-    case "signal":
-      // Forward the signal to the target client
-      const targetSocket = payload.targetConnectionID;
-      if (targetSocket) {
-        const message = {
-          type: "signal",
-          from: senderConnection,
-          signal: payload.data,
-        };
-        const output = {
-          ConnectionId: targetSocket,
-          Data: JSON.stringify(message),
-        };
-        await client.postToConnection(output).promise();
+      if (connections.length > 1) {
+        await Promise.all(
+          connections
+            .filter(
+              (connection) => connection.connectionID !== senderConnection
+            )
+            .map(async (connection) => {
+              const output = {
+                ConnectionId: connection.connectionID,
+                Data: JSON.stringify({
+                  type: "ice-candidate",
+                  candidate: payload.candidate,
+                }),
+              };
+              await client.postToConnection(output).promise();
+            })
+        );
       }
       break;
+    case "offer":
+      if (connections.length > 1) {
+        await Promise.all(
+          connections
+            .filter(
+              (connection) => connection.connectionID !== senderConnection
+            )
+            .map(async (connection) => {
+              const output = {
+                ConnectionId: connection.connectionID,
+                Data: JSON.stringify({
+                  type: "offer",
+                  offer: payload.offer,
+                }),
+              };
+              await client.postToConnection(output).promise();
+            })
+        );
+      }
+      break;
+    case "answer":
+      if (connections.length > 1) {
+        await Promise.all(
+          connections
+            .filter(
+              (connection) => connection.connectionID !== senderConnection
+            )
+            .map(async (connection) => {
+              const output = {
+                ConnectionId: connection.connectionID,
+                Data: JSON.stringify({
+                  type: "answer",
+                  answer: payload.answer,
+                }),
+              };
+              await client.postToConnection(output).promise();
+            })
+        );
+      }
+      break;
+    case "leave":
+      await Promise.all(
+        connections
+          .filter((connection) => connection.connectionID !== senderConnection)
+          .map(async (connection) => {
+            const output = {
+              ConnectionId: connection.connectionID,
+              Data: JSON.stringify({
+                type: "leave",
+              }),
+            };
+            await client.postToConnection(output).promise();
+          })
+      );
     default:
-      console.error("Unknown message type:", payload.requestType);
+      console.error("Unknown message type:", payload.type);
   }
 }

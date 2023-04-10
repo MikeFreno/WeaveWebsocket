@@ -67,6 +67,7 @@ model Server_Channel {
   ServerId    Int
   description String?
   type        String
+  connections String?
 
   @@index([ServerId])
 }

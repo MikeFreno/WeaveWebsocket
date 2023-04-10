@@ -32,7 +32,7 @@ export async function handler(event: APIGatewayProxyEvent) {
   const client = new AWS.ApiGatewayManagementApi({
     endpoint: `https://${event.requestContext.domainName}/${event.requestContext.stage}`,
   });
-  if (connections.length > 0) {
+  if (connections.length > 0 && comment) {
     await Promise.all(
       connections.map(async (connection) => {
         try {
@@ -47,11 +47,6 @@ export async function handler(event: APIGatewayProxyEvent) {
             await prisma.wSConnection.delete({
               where: { connectionID: connection.connectionID },
             });
-          } else {
-            console.error(
-              `Failed to send message to connection ${connection.connectionID}: ${e}`
-            );
-            throw e;
           }
         }
       })
